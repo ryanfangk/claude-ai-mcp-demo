@@ -12,6 +12,7 @@
     "generate:importmap": "payload generate:importmap",
     "migrate": "payload migrate",
     "migrate:create": "payload migrate:create",
+    "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "test": "pnpm test:unit && pnpm test:int",
     "test:unit": "vitest run --config ./vitest.unit.config.mts",
     "test:int": "vitest run --config ./vitest.config.mts",
