@@ -1,41 +1,27 @@
 import type { CollectionConfig } from 'payload'
-import { isAdmin, isAdminOrMcpAgent, publishedOrAdminOrMcpAgent } from './access'
-import { forceDraftForMcpWrites, generateSlug, markdownToLexical } from './mcpHooks'
+import { isAdmin, isAdminOrMcpAgent } from './access'
+import { generateSlug, markdownToLexical } from './mcpHooks'
 import { PRODUCT_CATEGORY_OPTIONS } from '@/lib/categories'
 
 export const Products: CollectionConfig = {
   slug: 'products',
   admin: {
     useAsTitle: 'title',
-    defaultColumns: ['title', 'price', 'category', '_status', 'featured'],
+    defaultColumns: ['title', 'price', 'category', 'featured'],
   },
-  versions: { drafts: true },
   trash: true,
   access: {
-    read: publishedOrAdminOrMcpAgent,
+    // Public storefront — anyone can read products. Demo project.
+    read: () => true,
     create: isAdminOrMcpAgent,
     update: isAdminOrMcpAgent,
     delete: isAdmin,
   },
   hooks: {
     beforeValidate: [generateSlug],
-    beforeOperation: [forceDraftForMcpWrites],
     beforeChange: [markdownToLexical],
   },
   fields: [
-    {
-      name: 'publicId',
-      type: 'text',
-      required: true,
-      unique: true,
-      index: true,
-      defaultValue: () => crypto.randomUUID(),
-      admin: {
-        readOnly: true,
-        position: 'sidebar',
-        description: 'Stable external identifier (UUID v4).',
-      },
-    },
     { name: 'title', type: 'text', required: true },
     { name: 'subtitle', type: 'text' },
     {

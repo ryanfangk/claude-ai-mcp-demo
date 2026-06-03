@@ -1,4 +1,4 @@
-import type { CollectionBeforeChangeHook, CollectionBeforeOperationHook, CollectionBeforeValidateHook } from 'payload'
+import type { CollectionBeforeChangeHook, CollectionBeforeValidateHook } from 'payload'
 import { convertMarkdownToLexical, editorConfigFactory } from '@payloadcms/richtext-lexical'
 
 let cachedEditorConfig: Awaited<ReturnType<typeof editorConfigFactory.default>> | null = null
@@ -23,31 +23,6 @@ export const markdownToLexical: CollectionBeforeChangeHook = async ({ data, req 
     data.contentMd = null
   }
   return data
-}
-
-/**
- * Force MCP writes to land as DRAFT, never published — and on an update of an
- * already-published row, PRESERVE the live version (the edit waits as a
- * separate draft for a human to publish).
- *
- * The plugin's `draft` tool arg defaults to publish, and content collections'
- * write access lets the agent through — so without this an agent could publish
- * directly. The plugin sets `req.payloadAPI === 'MCP'` on every tool request,
- * the reliable signal.
- *
- * Forces the OPERATION's `draft: true` flag, NOT `data._status = 'draft'`. The
- * distinction matters on an update of a published row: flipping `_status`
- * would UNPUBLISH the live version; `draft: true` instead writes a new draft
- * version on top while the published version stays current.
- */
-export const forceDraftForMcpWrites: CollectionBeforeOperationHook = ({ args, operation }) => {
-  if (
-    (operation === 'create' || operation === 'update') &&
-    (args.req as { payloadAPI?: string })?.payloadAPI === 'MCP'
-  ) {
-    ;(args as { draft?: boolean }).draft = true
-  }
-  return args
 }
 
 export const generateSlug: CollectionBeforeValidateHook = ({ data, operation }) => {

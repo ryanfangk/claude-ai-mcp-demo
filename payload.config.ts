@@ -10,6 +10,7 @@ import { Admins } from './collections/Admins'
 import { MCPAgents } from './collections/MCPAgents'
 import { Products } from './collections/Products'
 import { createManyProductsTool, updateManyProductsTool } from './lib/mcp-tools'
+import { mcpOverrideAuth } from './lib/workos'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -35,9 +36,11 @@ export default buildConfig({
   plugins: [
     // Official Payload MCP server. Content-only surface — only `products` is
     // exposed; admins/mcp-agents are managed by humans in the admin panel.
-    // Writes land as DRAFT (enforced by Products' forceDraftForMcpWrites
-    // hook). Markdown body via the `contentMd` sidecar + markdownToLexical
-    // hook so an LLM doesn't have to emit raw Lexical JSON.
+    // MCP writes publish immediately (this is a non-production demo where the
+    // point is operator-free MCP-driven storefront updates — see
+    // .claude/rules/payload-conventions.md). Markdown body via the `contentMd`
+    // sidecar + markdownToLexical hook so an LLM doesn't have to emit raw
+    // Lexical JSON.
     //
     // `disabled` is the global kill switch: MCP is OFF unless
     // MCP_ENABLED === 'true' in the environment.
@@ -48,6 +51,11 @@ export default buildConfig({
       // `isAdminOrMcpAgent` reject the agent at the access layer even if a
       // tool existed.
       userCollection: 'mcp-agents',
+      // Auth resolution: a valid WorkOS AuthKit OAuth token (the Claude.ai-web
+      // path) grants the content surface attributed to an mcp-agent; anything
+      // else falls back to the plugin's default per-API-key auth (the Claude
+      // Code / mcp-remote path). See lib/workos.ts.
+      overrideAuth: mcpOverrideAuth,
       // Default-allow on a freshly-created API key: tick every tool
       // capability checkbox at create time so a key works out of the box; the
       // operator unticks to restrict. Safe because the plugin's
@@ -102,7 +110,17 @@ export default buildConfig({
     outputFile: path.resolve(dirname, 'payload-types.ts'),
   },
   db: postgresAdapter({
+    // UUID PKs across every Payload-managed table. The UUID `id` IS the
+    // external identifier — no `publicId` sidecar. Demo-scale project, so the
+    // hybrid integer-PK + UUID-publicId pattern doesn't pay for itself.
+    idType: 'uuid',
     pool: { connectionString: requireEnv('DATABASE_URL') },
+    // Integration tests migrate a disposable DB and rely on the migration
+    // files being authoritative — dev-mode schema-push would race the
+    // migrations. Tests set DISABLE_DB_PUSH=true (via .env.test) to turn
+    // push off. Unset elsewhere → `undefined` → Payload's normal default
+    // (push in dev, never in production).
+    push: process.env.DISABLE_DB_PUSH === 'true' ? false : undefined,
   }),
   sharp,
 })
