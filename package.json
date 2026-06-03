@@ -11,7 +11,11 @@
     "generate:types": "payload generate:types",
     "generate:importmap": "payload generate:importmap",
     "migrate": "payload migrate",
-    "migrate:create": "payload migrate:create"
+    "migrate:create": "payload migrate:create",
+    "test": "pnpm test:unit && pnpm test:int",
+    "test:unit": "vitest run --config ./vitest.unit.config.mts",
+    "test:int": "vitest run --config ./vitest.config.mts",
+    "test:watch": "vitest --config ./vitest.config.mts"
   },
   "dependencies": {
     "@payloadcms/db-postgres": "^3.85.0",
@@ -20,6 +24,7 @@
     "@payloadcms/richtext-lexical": "^3.85.0",
     "@payloadcms/ui": "^3.85.0",
     "graphql": "^16.13.2",
+    "jose": "^6.2.3",
     "next": "^16.2.6",
     "payload": "^3.85.0",
     "react": "19.2.4",
@@ -29,11 +34,15 @@
   },
   "devDependencies": {
     "@types/node": "^20.19.39",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "dotenv": "^17.4.2",
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.1",
-    "typescript": "^5.9.3"
+    "pg": "^8.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.6"
   },
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
