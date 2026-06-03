@@ -1,0 +1,111 @@
+// Pop-up shop — Payload admin brand layer
+//
+// Brand tokens live at :root so any custom Payload component can read them.
+// Overrides target Payload's documented hooks: --font-body for typography,
+// --bg-color / --color on .btn--style-primary for the accent button, the
+// --theme-* status colors for validation surfaces, and wrap inside
+// @layer payload-default to win the cascade (per the customizing-CSS guide:
+// "All Payload CSS is encapsulated inside CSS layers under
+// `@layer payload-default`. Any custom css will now have the highest
+// possible specificity.").
+//
+// Fonts pulled from Google Fonts via @import rather than next/font: the
+// Payload (payload)/layout.tsx is auto-generated and marked DO NOT MODIFY,
+// so the SCSS is the safe injection point.
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=DM+Serif+Display&display=swap');
+
+:root {
+  // ---- Brand palette -----------------------------------------------------
+  // The single source of truth; the storefront reads the same variables.
+  --brand-coral: #f25f3b;
+  --brand-coral-dark: #c44324;
+  --brand-indigo: #1e1b4b;
+  --brand-ink: #0b0d10;
+  --brand-slate: #3a3e47;
+  --brand-mute: #6b7280;
+  --brand-hairline: #e5e7eb;
+  --brand-surface: #f8f9fa;
+  --brand-canvas: #ffffff;
+
+  // ---- Typography stacks -------------------------------------------------
+  --font-brand-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Inter',
+    system-ui, sans-serif;
+  --font-brand-serif: 'DM Serif Display', Georgia, serif;
+}
+
+@layer payload-default {
+  // Payload reads --font-body for the global body face. Set it once.
+  :root {
+    --font-body: var(--font-brand-sans);
+  }
+
+  // ---- Headings ---------------------------------------------------------
+  // Serif on the big ones (page H1/H2). Sub-sections stay sans for
+  // legibility — DM Serif Display is too editorial at small sizes.
+  body,
+  input,
+  textarea,
+  select,
+  button {
+    font-family: var(--font-brand-sans);
+  }
+
+  h1,
+  h2 {
+    font-family: var(--font-brand-serif);
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+
+  // ---- Primary button ---------------------------------------------------
+  // Per packages/ui/src/elements/Button/index.scss: --bg-color and --color
+  // are the Button's own custom props; we override them on the primary
+  // variant so coral applies everywhere a primary button renders (save,
+  // submit, "Create New", etc.) without leaking into secondaries.
+  .btn--style-primary {
+    --bg-color: var(--brand-coral);
+    --color: #ffffff;
+    --hover-bg: var(--brand-coral-dark);
+    --hover-color: #ffffff;
+    --btn-border: var(--brand-coral);
+    --hover-btn-border: var(--brand-coral-dark);
+  }
+
+  // Secondary buttons get the indigo treatment so the "two button" rows
+  // (Save / Cancel) read as primary/secondary, not primary/ghost.
+  .btn--style-secondary {
+    --color: var(--brand-indigo);
+    --hover-color: var(--brand-indigo);
+    --btn-border: var(--brand-indigo);
+    --hover-btn-border: var(--brand-indigo);
+  }
+
+  // ---- Links ------------------------------------------------------------
+  a {
+    color: var(--brand-coral);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+
+  a:hover {
+    color: var(--brand-coral-dark);
+  }
+
+  // ---- Focus ring -------------------------------------------------------
+  // Coral focus ring so keyboard navigation stays on-brand.
+  :focus-visible {
+    outline: 2px solid var(--brand-coral);
+    outline-offset: 2px;
+  }
+
+  // ---- Status colors ----------------------------------------------------
+  // Override the mid-shades Payload actually uses for badges, alerts and
+  // validation. The 50 / 950 ends of each ramp drive subtle backgrounds —
+  // safe to leave at Payload defaults; the 500 is the loud one to retint.
+  :root {
+    --theme-success-500: #10b981;
+    --theme-warning-500: #f59e0b;
+    --theme-error-500: #ef4444;
+  }
+}

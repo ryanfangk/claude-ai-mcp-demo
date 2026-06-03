@@ -31,6 +31,19 @@ export default buildConfig({
     importMap: {
       baseDir: path.resolve(dirname),
     },
+    // Pop-up Shop brand graphics. The login splash gets the full
+    // wordmark+disc; the nav header gets just the coral disc.
+    // String paths point Payload's importMap generator at the files
+    // (run `pnpm generate:importmap` after changing these).
+    components: {
+      graphics: {
+        Logo: '/components/admin/Logo',
+        Icon: '/components/admin/Icon',
+      },
+    },
+    meta: {
+      titleSuffix: ' — Pop-up Shop',
+    },
   },
   collections: [Admins, MCPAgents, Products],
   plugins: [
