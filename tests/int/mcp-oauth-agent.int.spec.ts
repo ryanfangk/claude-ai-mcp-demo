@@ -109,10 +109,12 @@ describe('mcp-agents name validation', () => {
   it('accepts a clean slug name (id + email auto-derived by hook)', async () => {
     // The deriveAgentEmailHook assigns a UUID `id` + derives `email` from
     // (name, id) when the caller omits them — the test just provides `name`.
+    // TS can't see the hook fill in `email` so we cast to satisfy the
+    // (correctly-strict) generated type that lists `email` as required.
     const a = await payload.create({
       collection: 'mcp-agents',
       overrideAccess: true,
-      data: { name: 'manual-valid-bot' },
+      data: { name: 'manual-valid-bot' } as never,
     })
     expect(a.name).toBe('manual-valid-bot')
     expect(typeof a.id).toBe('string')
@@ -124,7 +126,7 @@ describe('mcp-agents name validation', () => {
       payload.create({
         collection: 'mcp-agents',
         overrideAccess: true,
-        data: { name: 'has space' },
+        data: { name: 'has space' } as never,
       }),
     ).rejects.toThrow()
   })
