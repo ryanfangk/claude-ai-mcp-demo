@@ -39,13 +39,12 @@ const productItemSchema = z.object({
     .describe('URL slug, kebab-case, unique across products.'),
   price: z.number().min(0).describe('Price in major currency units (e.g. 7.99 = $7.99). 0 = free.'),
   category: z.enum(PRODUCT_CATEGORY_VALUES).describe('Product category.'),
-  currency: z.string().optional().describe("ISO 4217 lowercase. Defaults to 'usd'."),
+  currency: z.enum(['usd', 'cad', 'eur']).optional().describe("ISO 4217 lowercase. Defaults to 'usd'."),
   subtitle: z.string().optional(),
   description: z.string().optional(),
   contentMd: z.string().optional().describe('Body as Markdown — rendered to rich text on save.'),
   icon: z.string().optional(),
   featured: z.boolean().optional(),
-  publicId: z.string().uuid().optional().describe('Stable external UUID. Auto-generated if omitted.'),
 })
 
 type ProductItem = z.infer<typeof productItemSchema>
@@ -54,19 +53,18 @@ const productsArraySchema: z.ZodTypeAny = z
   .array(productItemSchema as z.ZodTypeAny)
   .min(1)
   .max(MAX_PRODUCTS_PER_CALL)
-  .describe('Array of products to create as drafts (1–100).')
+  .describe('Array of products to create (1–100). Each row publishes immediately.')
 
-// Row selector for update: identify each row by one of id / slug / publicId.
+// Row selector for update: identify each row by one of id (UUID) / slug.
 // The refine REJECTS items carrying none, so a malformed update is bounced at
 // the schema boundary with a clear message.
 const selectorShape = {
-  id: z.union([z.number(), z.string()]).optional().describe('Numeric row id (from a prior create/find).'),
+  id: z.string().optional().describe('Row id (UUID, from a prior create/find).'),
   slug: z.string().optional().describe('Unique slug.'),
-  publicId: z.string().optional().describe('Unique publicId (UUID).'),
 }
-const hasSelector = (d: { id?: unknown; slug?: unknown; publicId?: unknown }) =>
-  d.id != null || (typeof d.slug === 'string' && d.slug) || (typeof d.publicId === 'string' && d.publicId)
-const SELECTOR_MSG = 'Each item must identify the row by one of: id, slug, or publicId.'
+const hasSelector = (d: { id?: unknown; slug?: unknown }) =>
+  (typeof d.id === 'string' && d.id) || (typeof d.slug === 'string' && d.slug)
+const SELECTOR_MSG = 'Each item must identify the row by one of: id, slug.'
 
 const productUpdateItemSchema = z
   .object({
@@ -78,7 +76,7 @@ const productUpdateItemSchema = z
     icon: z.string().optional(),
     price: z.number().min(0).optional(),
     category: z.enum(PRODUCT_CATEGORY_VALUES).optional(),
-    currency: z.string().optional(),
+    currency: z.enum(['usd', 'cad', 'eur']).optional(),
     featured: z.boolean().optional(),
   })
   .refine(hasSelector, { message: SELECTOR_MSG })
@@ -87,17 +85,15 @@ const productUpdatesArraySchema: z.ZodTypeAny = z
   .array(productUpdateItemSchema as z.ZodTypeAny)
   .min(1)
   .max(MAX_PRODUCTS_PER_CALL)
-  .describe('Array of product updates (1–100). Each item: a selector (id/slug/publicId) + fields to change.')
+  .describe('Array of product updates (1–100). Each item: a selector (id/slug) + fields to change.')
 
-type Selector = { id?: number | string; slug?: string; publicId?: string }
+type Selector = { id?: string; slug?: string }
 
-async function resolveRowId(req: PayloadRequest, sel: Selector): Promise<number | string> {
-  if (sel.id != null) return sel.id
-  const field = sel.slug ? 'slug' : 'publicId'
-  const value = sel.slug ?? sel.publicId
+async function resolveRowId(req: PayloadRequest, sel: Selector): Promise<string> {
+  if (sel.id) return sel.id
   const found = await req.payload.find({
     collection: 'products',
-    where: { [field]: { equals: value } } as Where,
+    where: { slug: { equals: sel.slug } } as Where,
     limit: 1,
     depth: 0,
     pagination: false,
@@ -107,7 +103,7 @@ async function resolveRowId(req: PayloadRequest, sel: Selector): Promise<number 
   if (found.totalDocs === 0) {
     throw new Error(`No products row matches selector ${JSON.stringify(sel)}.`)
   }
-  return found.docs[0].id
+  return String(found.docs[0].id)
 }
 
 function authGuard(req: PayloadRequest, action: string) {
@@ -124,15 +120,16 @@ function parseError(label: string, error: { issues: unknown }) {
 /**
  * createManyProducts — create many Product rows in one MCP call.
  *
- * Each row is created as a DRAFT (never published). Per-item transaction:
- * a failed product (e.g. duplicate slug) rolls back cleanly and is reported
- * without aborting the others. Attribution runs as the authenticated
- * mcp-agent (overrideAccess: false + req.user).
+ * Each row publishes immediately (this is a non-production demo where the
+ * point is operator-free MCP-driven storefront updates). Per-item
+ * transaction: a failed product (e.g. duplicate slug) rolls back cleanly and
+ * is reported without aborting the others. Attribution runs as the
+ * authenticated mcp-agent (overrideAccess: false + req.user).
  */
 export const createManyProductsTool: McpCustomTool = {
   name: 'createManyProducts',
   description:
-    'Create many Product rows in ONE call from a JSON array — use this instead of calling createProducts repeatedly. Every product is created as a DRAFT (a human admin publishes later). Per item: title (required), slug (kebab-case, unique), price (major units, e.g. 7.99), category; optional subtitle, description, contentMd (Markdown → rich text), icon, currency (default usd), featured, publicId (UUID; auto-generated if omitted). Partial success: a failed product (e.g. duplicate slug) is reported without aborting the others. Max 100 per call.',
+    'Create many Product rows in ONE call from a JSON array — use this instead of calling createProducts repeatedly. Each row publishes immediately. Per item: title (required), slug (kebab-case, unique), price (major units, e.g. 7.99), category; optional subtitle, description, contentMd (Markdown → rich text), icon, currency (default usd), featured. Partial success: a failed product (e.g. duplicate slug) is reported without aborting the others. Max 100 per call.',
   parameters: { products: productsArraySchema },
   handler: async (args: Record<string, unknown>, req: PayloadRequest) => {
     const denied = authGuard(req, 'create products')
@@ -146,7 +143,7 @@ export const createManyProductsTool: McpCustomTool = {
     const products: ProductItem[] = parsed.data
     const payload = req.payload
     const results: Array<
-      | { index: number; slug: string; ok: true; id: number | string; publicId: string }
+      | { index: number; slug: string; ok: true; id: string }
       | { index: number; slug: string; ok: false; error: string }
     > = []
     let created = 0
@@ -155,8 +152,7 @@ export const createManyProductsTool: McpCustomTool = {
     for (let i = 0; i < products.length; i++) {
       const p = products[i]
       // One transaction per product so a failed row rolls back without
-      // aborting the rest. Passing `req` keeps access control + the
-      // force-draft hook intact.
+      // aborting the rest. Passing `req` keeps access control intact.
       const tx = await payload.db.beginTransaction()
       const prevTx = req.transactionID
       if (tx) req.transactionID = tx
@@ -174,10 +170,7 @@ export const createManyProductsTool: McpCustomTool = {
             contentMd: p.contentMd,
             icon: p.icon,
             featured: p.featured,
-            publicId: p.publicId ?? crypto.randomUUID(),
-            _status: 'draft',
           },
-          draft: true,
           overrideAccess: false,
           req,
         })
@@ -187,8 +180,7 @@ export const createManyProductsTool: McpCustomTool = {
           index: i,
           slug: p.slug,
           ok: true,
-          id: doc.id,
-          publicId: (doc as unknown as { publicId: string }).publicId,
+          id: String(doc.id),
         })
       } catch (err) {
         if (tx) await payload.db.rollbackTransaction(tx)
@@ -204,7 +196,7 @@ export const createManyProductsTool: McpCustomTool = {
       }
     }
 
-    const summary = { created, failed, total: products.length, status: 'draft', results }
+    const summary = { created, failed, total: products.length, status: 'published', results }
     return { content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }] }
   },
 }
@@ -212,14 +204,14 @@ export const createManyProductsTool: McpCustomTool = {
 /**
  * updateManyProducts — update many existing Product rows in one call.
  *
- * Each item identifies a row by id/slug/publicId and supplies any subset of
- * fields. Update of a PUBLISHED row lands as a new DRAFT (the live version
- * stays live). Per-item transaction: partial success.
+ * Each item identifies a row by id (UUID) or slug and supplies any subset of
+ * fields. Updates publish immediately (this is a non-production demo).
+ * Per-item transaction: partial success.
  */
 export const updateManyProductsTool: McpCustomTool = {
   name: 'updateManyProducts',
   description:
-    'Update many existing Product rows in ONE call. Each item must identify the row by `id`, `slug`, OR `publicId` (an item with none is rejected). Supply only the fields to change. Update of a published row lands as a DRAFT — the live version stays live while the edit waits for a human to publish. Partial success: a failed item is reported without aborting the others. Max 100 per call.',
+    'Update many existing Product rows in ONE call. Each item must identify the row by `id` (UUID) OR `slug` (an item with neither is rejected). Supply only the fields to change. Updates publish immediately. Partial success: a failed item is reported without aborting the others. Max 100 per call.',
   parameters: { products: productUpdatesArraySchema },
   handler: async (args: Record<string, unknown>, req: PayloadRequest) => {
     const denied = authGuard(req, 'update products')
@@ -231,7 +223,7 @@ export const updateManyProductsTool: McpCustomTool = {
     const items = parsed.data as Array<Record<string, unknown>>
     const payload = req.payload
     const results: Array<
-      | { index: number; ref: string; ok: true; id: number | string }
+      | { index: number; ref: string; ok: true; id: string }
       | { index: number; ref: string; ok: false; error: string }
     > = []
     let updated = 0
@@ -239,7 +231,7 @@ export const updateManyProductsTool: McpCustomTool = {
 
     for (let i = 0; i < items.length; i++) {
       const it = items[i]
-      const ref = String(it.slug ?? it.publicId ?? it.id ?? '?')
+      const ref = String(it.slug ?? it.id ?? '?')
       const tx = await payload.db.beginTransaction()
       const prevTx = req.transactionID
       if (tx) req.transactionID = tx
@@ -253,7 +245,6 @@ export const updateManyProductsTool: McpCustomTool = {
           collection: 'products',
           id,
           data,
-          draft: true,
           overrideAccess: false,
           req,
         })
@@ -269,7 +260,7 @@ export const updateManyProductsTool: McpCustomTool = {
       }
     }
 
-    const summary = { updated, failed, total: items.length, status: 'draft', results }
+    const summary = { updated, failed, total: items.length, status: 'published', results }
     return { content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }] }
   },
 }
