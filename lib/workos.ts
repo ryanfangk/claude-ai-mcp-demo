@@ -15,13 +15,31 @@ import { deriveAgentEmail, slugForAgentEmail } from '@/lib/mcp-agent-email'
 //   - MCP Authorization spec (2025-11-25): the resource server MUST validate
 //     that the token's audience is itself.
 
-const authkitDomain = process.env.WORKOS_AUTHKIT_DOMAIN?.replace(/\/$/, '')
+// Normalize a URL-shaped env var: prepend https:// if the value is a bare
+// host, strip any trailing slash. Returns null when the env var is unset.
+//
+// Why a normalizer: the Vercel dashboard's UI nudges operators to paste
+// hostnames without a scheme; without normalization the value flows straight
+// into `new URL(...)` (which throws), into a fetch() (which throws), and into
+// the JSON metadata responses (which Claude.ai parses as a bare host and
+// can't route to). Centralizing the rule keeps the three call sites
+// (JWKS fetch, AS metadata proxy, PRM document) in sync.
+export function normalizeUrlEnv(value: string | undefined): string | null {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+  return withScheme.replace(/\/$/, '')
+}
+
+const authkitDomain = normalizeUrlEnv(process.env.WORKOS_AUTHKIT_DOMAIN)
+export { authkitDomain as workosAuthkitDomain }
 
 // The MCP server's resource identifier (RFC 8707 audience). MUST match the
 // Resource Indicator registered in the WorkOS Dashboard. Derived from the site
 // URL so each environment (localhost in dev, the deployed URL in prod) binds
 // to its own resource.
-export const mcpResourceUrl = `${(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000').replace(/\/$/, '')}/api/mcp`
+export const mcpResourceUrl = `${normalizeUrlEnv(process.env.NEXT_PUBLIC_SITE_URL) ?? 'http://localhost:3000'}/api/mcp`
 
 export const protectedResourceMetadataPath = '/.well-known/oauth-protected-resource'
 
