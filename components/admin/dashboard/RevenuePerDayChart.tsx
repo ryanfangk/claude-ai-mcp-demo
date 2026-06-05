@@ -1,20 +1,25 @@
 'use client'
 
-// Recharts area chart: products created per day across the last 30 days.
+// Recharts area chart: total revenue per day across the last 30 days.
 // Client component — Recharts uses refs + ResizeObserver, can't render under
-// React Server Components. Server hands plain { day, count } arrays in;
+// React Server Components. Server hands plain { day, revenue } arrays in;
 // nothing here touches Payload.
+//
+// Same coral-gradient treatment as the previous products-per-day chart so
+// the top-of-page chart stays the visual focal point of the dashboard —
+// just measuring a different metric (the one your boss actually cares about).
 
 import React from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
-type Point = { day: string; count: number }
+type Point = { day: string; revenue: number }
 
 type Props = {
   data: Point[]
   coral: string
   mute: string
   hairline: string
+  currency: string // e.g. 'USD'
 }
 
 function shortDay(iso: string) {
@@ -23,13 +28,17 @@ function shortDay(iso: string) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-export default function ProductsPerDayChart({ data, coral, mute, hairline }: Props) {
+function formatMoney(n: number, currency: string) {
+  return `${n.toFixed(2)} ${currency}`
+}
+
+export default function RevenuePerDayChart({ data, coral, mute, hairline, currency }: Props) {
   return (
     <div style={{ width: '100%', height: 220 }}>
       <ResponsiveContainer>
         <AreaChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
           <defs>
-            <linearGradient id="coralFill" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id="revenueCoralFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={coral} stopOpacity={0.35} />
               <stop offset="100%" stopColor={coral} stopOpacity={0} />
             </linearGradient>
@@ -48,8 +57,8 @@ export default function ProductsPerDayChart({ data, coral, mute, hairline }: Pro
             tick={{ fill: mute, fontSize: 12 }}
             tickLine={false}
             axisLine={false}
-            allowDecimals={false}
-            width={32}
+            width={48}
+            tickFormatter={(v) => `$${Math.round(Number(v))}`}
           />
           <Tooltip
             cursor={{ stroke: hairline }}
@@ -61,14 +70,14 @@ export default function ProductsPerDayChart({ data, coral, mute, hairline }: Pro
               color: '#0b0d10',
             }}
             labelFormatter={(value) => shortDay(String(value))}
-            formatter={(value) => [`${value} products`, '']}
+            formatter={(value) => [formatMoney(Number(value), currency), '']}
           />
           <Area
             type="monotone"
-            dataKey="count"
+            dataKey="revenue"
             stroke={coral}
             strokeWidth={2}
-            fill="url(#coralFill)"
+            fill="url(#revenueCoralFill)"
             isAnimationActive={false}
           />
         </AreaChart>

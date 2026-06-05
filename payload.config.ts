@@ -104,8 +104,17 @@ export default buildConfig({
         grantByDefault(collection.fields)
         return collection
       },
+      // Demo-grade MCP surface — DELIBERATELY broader than the rule in
+      // .claude/rules/payload-conventions.md would normally allow, because
+      // the whole point of the demo is showing what an MCP agent can do.
+      // See the carve-out in that rule for the production-time narrowing.
+      //
+      // Locked surfaces (NOT enabled below): admins (identity bootstrap),
+      // mcp-agents (programmatic identity self-mutation), purchases
+      // (financial history — append-only via storefront checkout only).
       collections: {
-        products: { enabled: { find: true, create: true, update: true } },
+        products: { enabled: { find: true, create: true, update: true, delete: true } },
+        users: { enabled: { find: true, create: true, delete: true } },
       },
       mcp: {
         handlerOptions: {
