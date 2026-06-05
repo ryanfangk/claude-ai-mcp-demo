@@ -1,14 +1,14 @@
 // Custom Payload admin dashboard for the Pop-up Shop demo.
 //
 // Replaces Payload's stock "Collections list + Globals list" landing page with
-// one screen that tells the demo story: *what has the MCP agent done to this
-// shop, and what's it look like right now?*
+// one screen that tells the demo story: *what's selling, what's in the
+// catalogue, what has the MCP agent done lately.*
 //
-// Every number on this page is real DB state — no fabricated sales / views /
-// customers — sourced via the Local API at render time. Data shape is held
-// minimal here in the Server Component and handed to small client-component
-// chart wrappers, so the chart libraries' client bundle is the only client
-// payload and the data fetch never leaves the server.
+// Every number on this page is real DB state — no fabricated traffic — sourced
+// via the Local API at render time. The Server Component holds the data work
+// (find + bucket + reduce), and small client-component wrappers do nothing but
+// hand plain arrays to Recharts. The chart library's bundle is the only client
+// payload; the Payload Local API never crosses the client boundary.
 //
 // Wired in payload.config.ts as admin.components.views.dashboard.
 
@@ -16,10 +16,11 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 
 import StatTile from './dashboard/StatTile'
+import RevenuePerDayChart from './dashboard/RevenuePerDayChart'
 import ProductsPerDayChart from './dashboard/ProductsPerDayChart'
 import CategoryDonut from './dashboard/CategoryDonut'
 import PriceHistogram from './dashboard/PriceHistogram'
-import RecentProductsTable from './dashboard/RecentProductsTable'
+import RecentPurchasesTable from './dashboard/RecentPurchasesTable'
 import { PRODUCT_CATEGORY_OPTIONS } from '@/lib/categories'
 
 const BRAND = {
@@ -58,19 +59,12 @@ function formatRelative(iso: string | null | undefined): string {
   return `${day} days ago`
 }
 
-// Filter products to those created within the last DAYS_WINDOW days. Hoisted
-// out of the component body because Next.js 16 lint flags `Date.now()` calls
-// during render as impure (the React purity rule). Inside a top-level helper
-// function the same call is fine.
-function productsInWindow<T extends { createdAt?: unknown }>(rows: T[], days: number): T[] {
-  const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000
-  return rows.filter((r) => typeof r.createdAt === 'string' && new Date(r.createdAt).getTime() >= sinceMs)
-}
-
-// Bucket a series of ISO date strings into a contiguous day-by-day count
-// covering the last DAYS_WINDOW days, oldest-first. Zero-days are kept so
-// the line chart doesn't compress empty stretches into gaps.
-function bucketByDay(timestamps: string[]): Array<{ day: string; count: number }> {
+// Count rows per day across the last DAYS_WINDOW days, oldest-first. Zero
+// days stay in the series so the area chart doesn't compress empty
+// stretches into gaps. Used by the products-per-day chart.
+function bucketCountByDay(
+  timestamps: string[],
+): Array<{ day: string; count: number }> {
   const counts = new Map<string, number>()
   const today = new Date()
   today.setUTCHours(0, 0, 0, 0)
@@ -84,6 +78,35 @@ function bucketByDay(timestamps: string[]): Array<{ day: string; count: number }
     if (counts.has(key)) counts.set(key, (counts.get(key) ?? 0) + 1)
   }
   return Array.from(counts.entries()).map(([day, count]) => ({ day, count }))
+}
+
+// Build a contiguous day-by-day revenue series covering the last DAYS_WINDOW
+// days (oldest-first). Days with no purchase are kept at zero so the chart
+// doesn't compress empty stretches into gaps. Date.now() is hoisted out of
+// the component body (React purity rule).
+function bucketRevenueByDay(
+  purchases: Array<{ purchasedAt?: unknown; priceAtPaid?: unknown }>,
+): Array<{ day: string; revenue: number }> {
+  const sums = new Map<string, number>()
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+  for (let i = DAYS_WINDOW - 1; i >= 0; i--) {
+    const d = new Date(today)
+    d.setUTCDate(d.getUTCDate() - i)
+    sums.set(d.toISOString().slice(0, 10), 0)
+  }
+  for (const p of purchases) {
+    if (typeof p.purchasedAt === 'string') {
+      const key = p.purchasedAt.slice(0, 10)
+      if (sums.has(key)) {
+        sums.set(
+          key,
+          (sums.get(key) ?? 0) + (typeof p.priceAtPaid === 'number' ? p.priceAtPaid : 0),
+        )
+      }
+    }
+  }
+  return Array.from(sums.entries()).map(([day, revenue]) => ({ day, revenue }))
 }
 
 function bucketByCategory(items: Array<{ category: string | null | undefined }>) {
@@ -114,44 +137,91 @@ function bucketByPrice(items: Array<{ price: number | null | undefined }>) {
   }))
 }
 
+// Pick the "headline" currency by majority share of purchases. The demo
+// supports usd/cad/eur so the revenue label needs a single denomination —
+// just go with whichever appears most often.
+function dominantCurrency(purchases: Array<{ currency?: unknown }>): string {
+  if (purchases.length === 0) return 'USD'
+  const counts = new Map<string, number>()
+  for (const p of purchases) {
+    if (typeof p.currency === 'string') {
+      counts.set(p.currency, (counts.get(p.currency) ?? 0) + 1)
+    }
+  }
+  if (counts.size === 0) return 'USD'
+  let max = 0
+  let winner = 'USD'
+  for (const [c, n] of counts) {
+    if (n > max) {
+      max = n
+      winner = c
+    }
+  }
+  return winner.toUpperCase()
+}
+
 export default async function Dashboard() {
   const payload = await getPayload({ config })
 
-  // One query pulls every product needed by the four cards + the table. At
-  // demo scale this is a few hundred rows at most; if it ever grows, swap to
-  // per-card scoped queries.
-  const allProducts = await payload.find({
-    collection: 'products',
-    limit: 10_000,
-    pagination: false,
-    depth: 0,
-    sort: '-createdAt',
-  })
-
-  const agents = await payload.find({
-    collection: 'mcp-agents',
-    limit: 1000,
-    pagination: false,
-    depth: 0,
-    sort: '-lastSeenAt',
-  })
+  // Three concurrent finds. At demo scale this is a few hundred rows total;
+  // if the dataset ever grows, swap to per-card scoped queries with cheaper
+  // shape (depth: 0 + select).
+  const [allProducts, allPurchases, agents] = await Promise.all([
+    payload.find({
+      collection: 'products',
+      limit: 10_000,
+      pagination: false,
+      depth: 0,
+      sort: '-createdAt',
+    }),
+    payload.find({
+      collection: 'purchases',
+      limit: 10_000,
+      pagination: false,
+      depth: 1, // pull product + user for the recent-purchases table
+      sort: '-purchasedAt',
+    }),
+    payload.find({
+      collection: 'mcp-agents',
+      limit: 1000,
+      pagination: false,
+      depth: 0,
+      sort: '-lastSeenAt',
+    }),
+  ])
 
   const products = allProducts.docs
+  const purchases = allPurchases.docs
+
   const totalProducts = products.length
-  const categoriesUsed = new Set(products.map((p) => p.category).filter(Boolean)).size
+  const totalPurchases = purchases.length
+  const totalRevenue = purchases.reduce(
+    (sum, p) => sum + (typeof p.priceAtPaid === 'number' ? p.priceAtPaid : 0),
+    0,
+  )
   const totalAgents = agents.docs.length
   const activeAgents = agents.docs.filter((a) => a.active === true).length
   const lastSeenIso =
     agents.docs.find((a) => typeof a.lastSeenAt === 'string')?.lastSeenAt ?? null
   const lastSeenAgentName = agents.docs.find((a) => typeof a.lastSeenAt === 'string')?.name ?? null
 
-  const recentWindow = productsInWindow(products, DAYS_WINDOW)
+  const revenueCurrency = dominantCurrency(
+    purchases.map((p) => ({ currency: p.currency as string | undefined })),
+  )
 
-  const perDay = bucketByDay(
-    recentWindow
+  const revenuePerDay = bucketRevenueByDay(
+    purchases.map((p) => ({
+      purchasedAt: p.purchasedAt as string | undefined,
+      priceAtPaid: typeof p.priceAtPaid === 'number' ? p.priceAtPaid : 0,
+    })),
+  )
+
+  const productsPerDay = bucketCountByDay(
+    products
       .map((p) => p.createdAt)
       .filter((t): t is string => typeof t === 'string'),
   )
+
   const byCategory = bucketByCategory(
     products.map((p) => ({ category: (p.category as string | null | undefined) ?? null })),
   )
@@ -159,15 +229,31 @@ export default async function Dashboard() {
     products.map((p) => ({ price: typeof p.price === 'number' ? p.price : null })),
   )
 
-  const recent = products.slice(0, RECENT_TABLE_SIZE).map((p) => ({
-    id: String(p.id),
-    title: typeof p.title === 'string' ? p.title : '(untitled)',
-    category: typeof p.category === 'string' ? p.category : null,
-    price: typeof p.price === 'number' ? p.price : 0,
-    currency: typeof p.currency === 'string' ? p.currency : 'usd',
-    icon: typeof p.icon === 'string' ? p.icon : '📦',
-    createdAt: typeof p.createdAt === 'string' ? p.createdAt : new Date().toISOString(),
-  }))
+  const recentPurchases = purchases.slice(0, RECENT_TABLE_SIZE).map((p) => {
+    // depth: 1 populated product + user into the response. Cast through
+    // a narrow shape rather than Record — typed Payload models don't carry
+    // a string index signature, so a Record cast trips ts2352.
+    const product =
+      typeof p.product === 'object' && p.product !== null
+        ? (p.product as { title?: unknown; icon?: unknown; slug?: unknown })
+        : null
+    const user =
+      typeof p.user === 'object' && p.user !== null
+        ? (p.user as { email?: unknown; name?: unknown })
+        : null
+    return {
+      id: String(p.id),
+      productTitle: typeof product?.title === 'string' ? product.title : '(deleted product)',
+      productIcon: typeof product?.icon === 'string' ? product.icon : '📦',
+      productSlug: typeof product?.slug === 'string' ? product.slug : null,
+      buyerEmail: typeof user?.email === 'string' ? user.email : '(deleted user)',
+      buyerName: typeof user?.name === 'string' ? user.name : null,
+      priceAtPaid: typeof p.priceAtPaid === 'number' ? p.priceAtPaid : 0,
+      currency: typeof p.currency === 'string' ? p.currency : 'usd',
+      purchasedAt:
+        typeof p.purchasedAt === 'string' ? p.purchasedAt : new Date().toISOString(),
+    }
+  })
 
   return (
     <main
@@ -248,15 +334,15 @@ export default async function Dashboard() {
         }}
       >
         <StatTile label="Products" value={totalProducts.toString()} accent={BRAND.coral} />
-        <StatTile label="Categories" value={categoriesUsed.toString()} accent={BRAND.indigo} />
+        <StatTile label="Purchases" value={totalPurchases.toString()} accent={BRAND.indigo} />
         <StatTile
-          label="Active agents"
-          value={`${activeAgents} of ${totalAgents}`}
+          label="Revenue"
+          value={`$${totalRevenue.toFixed(2)}`}
           accent={BRAND.coral}
         />
         <StatTile
-          label="Catalogue value"
-          value={`$${products.reduce((a, p) => a + (typeof p.price === 'number' ? p.price : 0), 0).toFixed(2)}`}
+          label="Active agents"
+          value={`${activeAgents} of ${totalAgents}`}
           accent={BRAND.indigo}
         />
       </section>
@@ -270,8 +356,32 @@ export default async function Dashboard() {
           marginBottom: '1.5rem',
         }}
       >
+        <h2 style={cardTitleStyle()}>Revenue — last 30 days</h2>
+        <RevenuePerDayChart
+          data={revenuePerDay}
+          coral={BRAND.coral}
+          mute={BRAND.mute}
+          hairline={BRAND.hairline}
+          currency={revenueCurrency}
+        />
+      </section>
+
+      <section
+        style={{
+          background: BRAND.surface,
+          border: `1px solid ${BRAND.hairline}`,
+          borderRadius: '0.75rem',
+          padding: '1.5rem',
+          marginBottom: '1.5rem',
+        }}
+      >
         <h2 style={cardTitleStyle()}>Products created — last 30 days</h2>
-        <ProductsPerDayChart data={perDay} coral={BRAND.coral} mute={BRAND.mute} hairline={BRAND.hairline} />
+        <ProductsPerDayChart
+          data={productsPerDay}
+          indigo={BRAND.indigo}
+          mute={BRAND.mute}
+          hairline={BRAND.hairline}
+        />
       </section>
 
       <section
@@ -322,9 +432,9 @@ export default async function Dashboard() {
           padding: '1.5rem',
         }}
       >
-        <h2 style={cardTitleStyle()}>Recent products</h2>
-        <RecentProductsTable
-          rows={recent}
+        <h2 style={cardTitleStyle()}>Recent purchases</h2>
+        <RecentPurchasesTable
+          rows={recentPurchases}
           ink={BRAND.ink}
           mute={BRAND.mute}
           hairline={BRAND.hairline}

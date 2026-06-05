@@ -6,44 +6,83 @@
   existing example and match its structure.
 - No new folders or architectural layers without explicit approval.
 
-## MCP access surface — content only, never identity or finance
+## MCP access surface — demo-grade, with hard caps on identity bootstrap + finance
 
-MCP tools (and any other programmatic-agent integration that authenticates
-as an admin) MUST NOT have read or write access to the following
-collections — regardless of the admin row's underlying capability:
+This is a non-production demo. The whole point of the project is to show
+what an MCP agent can do to a running shop, so the MCP surface is
+intentionally broad — broader than the "content-only" posture that would
+be correct in production. What follows is the **current demo state**;
+the **production carve-out** at the bottom of this section is what to
+re-tighten if this code is ever lifted into a real deployment.
 
-- `users` — customer PII, soft-delete state, Stripe Customer linkage
-- `admins` — admin identity, password hashes, future sub-role field
-- `purchases` — financial records, status transitions drive refund liability
-- `audit-logs` — read-only system surface; MCP-driven changes would
-  poison the trail
+### Current demo MCP scope (configured in `payload.config.ts`)
 
-The MCP tool set is **content-only**: list/get/create/update on
-`products`, `content-sections`, `media-*`. No delete tools.
+**Enabled** (the agent can call these tools, in any combination, in a loop):
 
-**MCP writes publish immediately.** This is a non-production demo where the
-whole point is operator-free MCP-driven storefront updates — gating each
-write on a human "Publish" click would defeat the demonstration. Content
-collections accordingly do NOT enable Payload's draft/publish workflow
-(`versions: { drafts: true }` is OFF on Products); every save is the live
-version. If this project ever ships to production, re-enable drafts on
-content collections and restore a force-draft `beforeOperation` hook for
-MCP writes (the prior implementation lived in `collections/mcpHooks.ts` as
-`forceDraftForMcpWrites`; consult git history when re-introducing).
+- `products` — `find` / `create` / `update` / `delete`. Every save
+  publishes immediately (no draft workflow); a `delete` is a hard
+  delete unless `trash: true` is enabled on the collection.
+- `users` — `find` / `create` / `delete`. The agent can enumerate
+  customers, register new ones, and soft-delete them via `trash`.
+  Update is intentionally NOT exposed — passwords and emails should
+  not drift via agent action.
 
-This rule survives even if the agent is authenticated as an `owner`-role
-admin (per ADR 004 once accepted). The constraint is **tool-set scope**,
-not access-control granularity — the agent can't reach for surfaces its
-tools don't expose. Implementation lives in the MCP server's tool
-definitions, not in Payload collection access functions.
+**Locked** (NOT enabled in the plugin's `collections` config — the
+generated tools never get registered, so the agent can't reach them
+even if access control would allow it):
 
-Why the surface restriction exists: programmatic agents can hit every
-surface their tools expose, in loops, without operator supervision. The
-cost of an LLM accidentally soft-deleting a customer, hard-changing a
-Purchase status, or rewriting a password hash exceeds any plausible benefit
-of exposing those surfaces to an agent. Keep the blast radius bounded to
-content where mistakes are reversible (re-edit, overwrite) and don't
-affect customer money or identity.
+- `admins` — identity bootstrap. Letting an MCP loop create or delete
+  admin accounts is a privilege-escalation lever.
+- `mcp-agents` — the principal class the agent itself runs as.
+  Self-mutation (rotate keys, flip `active`) is an
+  agent-takes-over-itself failure mode.
+- `purchases` — financial-shape data. Append-only via the storefront
+  checkout server action; never MCP-mutable. If an agent could
+  `delete` a purchase the customer's order history evaporates with
+  no audit trail.
+
+The same lock applies to any future `audit-logs` / `subscriptions` /
+identity-overlay collections.
+
+**MCP writes publish immediately.** Content collections do NOT enable
+Payload's draft/publish workflow (`versions: { drafts: true }` is OFF
+on Products); every save is the live version. Gating each write on a
+human "Publish" click would defeat the demonstration.
+
+### Production carve-out
+
+If this project ever ships beyond the demo:
+
+1. Narrow `products` MCP scope back to `find` / `create` / `update`
+   (no `delete` — sold products with order history cannot be hard-removed
+   without orphaning purchase rows).
+2. Remove `users` from the MCP plugin entirely. Identity surface is
+   off-limits to programmatic agents — customer PII, payment-processor
+   linkages, and consent state should not be reachable from a loop.
+3. Re-enable drafts on content collections and restore the force-draft
+   `beforeOperation` hook for MCP writes (lived in
+   `collections/mcpHooks.ts` as `forceDraftForMcpWrites`; consult
+   git history when re-introducing).
+4. Keep `admins`, `mcp-agents`, `purchases` locked — those rules are
+   universal, not demo-specific.
+
+### Why even the demo keeps the hard caps
+
+Programmatic agents can hit every surface their tools expose, in loops,
+without operator supervision. The locked collections all share one
+property: a mistake in them is **expensive in a way that re-editing
+the catalogue is not**. Wrong product price → edit it back. Deleted
+admin → no one can log in. Deleted purchase → customer's receipt
+disappears and the financial-history audit trail has a hole. The
+demo can afford to be loose on content because content mistakes are
+reversible. It can't afford to be loose on identity or finance, demo
+or not.
+
+The constraint is **tool-set scope**, not access-control granularity —
+the agent can't reach for surfaces its tools don't expose, regardless
+of what its admin row could theoretically do. Implementation lives in
+the MCP plugin's `collections` config block, not in Payload collection
+access functions.
 
 ## Payload Local API
 
