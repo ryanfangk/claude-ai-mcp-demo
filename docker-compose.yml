@@ -3,7 +3,12 @@ services:
     image: postgres:16-alpine
     container_name: claude-ai-mcp-demo-db
     ports:
-      - "5432:5432"
+      # Host port 5433 to avoid colliding with other local Postgres
+      # instances (Postgres' default 5432 is heavily used). Inside the
+      # container the server still listens on 5432; the mapping makes it
+      # reachable at localhost:5433 from the host. DATABASE_URL in
+      # .env.local and .env.test should point at 5433.
+      - "5433:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { DM_Sans, DM_Serif_Display } from 'next/font/google'
+import Header from '@/app/(frontend)/_components/Header'
 
 // Self-host the brand fonts (next/font handles the CSS, the preload, and the
 // FOIT-vs-FOUT trade-off). Two CSS variables on <body> so the storefront
@@ -35,6 +36,7 @@ export default function FrontendLayout({ children }: { children: React.ReactNode
           WebkitFontSmoothing: 'antialiased',
         }}
       >
+        <Header />
         {children}
       </body>
     </html>

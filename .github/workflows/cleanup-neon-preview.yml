@@ -1,0 +1,41 @@
+name: Cleanup Neon Preview Branch
+
+# Deletes a branch's Vercel-Neon preview database (`preview/<git-branch>`) when the
+# git BRANCH is deleted — the lifecycle the preview DB is actually tied to (Vercel
+# creates it per branch deploy, with or without a PR, and doesn't reliably delete it).
+#
+# Triggers on the `delete` event (fires on ANY branch deletion: PR-merge-with-delete
+# OR a branch deleted with no PR open). Manual `workflow_dispatch` cleans up orphans
+# by name (e.g. a branch deleted before this workflow existed).
+#
+# NOTE: `delete`-triggered workflows run the copy on the repo's DEFAULT branch — so
+# this only starts firing once it's on `main`.
+#
+# Requires GitHub repo secrets: NEON_PROJECT_ID, NEON_API_KEY.
+
+on:
+  delete:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Git branch name (no preview/ prefix) whose preview Neon DB to delete'
+        required: true
+        type: string
+
+jobs:
+  cleanup:
+    # branch deletions only (skip tag deletions); always allow manual runs
+    if: github.event_name == 'workflow_dispatch' || github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    # Minimal-permissions: this workflow only calls Neon's REST API via the
+    # action; it never touches the GitHub API, so the default GITHUB_TOKEN
+    # permissions are surplus. An empty block drops everything.
+    permissions: {}
+    steps:
+      - name: Delete Neon Branch
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ secrets.NEON_PROJECT_ID }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          # delete event → github.event.ref (the deleted branch); manual → inputs.branch
+          branch: preview/${{ inputs.branch || github.event.ref }}

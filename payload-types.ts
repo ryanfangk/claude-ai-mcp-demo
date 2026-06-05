@@ -65,6 +65,7 @@ export interface Config {
   auth: {
     admins: AdminAuthOperations;
     'mcp-agents': McpAgentAuthOperations;
+    users: UserAuthOperations;
     'payload-mcp-api-keys': PayloadMcpApiKeyAuthOperations;
   };
   blocks: {};
@@ -72,6 +73,8 @@ export interface Config {
     admins: Admin;
     'mcp-agents': McpAgent;
     products: Product;
+    users: User;
+    purchases: Purchase;
     'payload-mcp-api-keys': PayloadMcpApiKey;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
@@ -83,6 +86,8 @@ export interface Config {
     admins: AdminsSelect<false> | AdminsSelect<true>;
     'mcp-agents': McpAgentsSelect<false> | McpAgentsSelect<true>;
     products: ProductsSelect<false> | ProductsSelect<true>;
+    users: UsersSelect<false> | UsersSelect<true>;
+    purchases: PurchasesSelect<false> | PurchasesSelect<true>;
     'payload-mcp-api-keys': PayloadMcpApiKeysSelect<false> | PayloadMcpApiKeysSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -99,7 +104,7 @@ export interface Config {
   widgets: {
     collections: CollectionsWidget;
   };
-  user: Admin | McpAgent | PayloadMcpApiKey;
+  user: Admin | McpAgent | User | PayloadMcpApiKey;
   jobs: {
     tasks: unknown;
     workflows: unknown;
@@ -124,6 +129,24 @@ export interface AdminAuthOperations {
   };
 }
 export interface McpAgentAuthOperations {
+  forgotPassword: {
+    email: string;
+    password: string;
+  };
+  login: {
+    email: string;
+    password: string;
+  };
+  registerFirstUser: {
+    email: string;
+    password: string;
+  };
+  unlock: {
+    email: string;
+    password: string;
+  };
+}
+export interface UserAuthOperations {
   forgotPassword: {
     email: string;
     password: string;
@@ -262,6 +285,71 @@ export interface Product {
   deletedAt?: string | null;
 }
 /**
+ * Customer-storefront identities. Created via the public /register form. NOT touchable by MCP — identity surface.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "users".
+ */
+export interface User {
+  id: string;
+  /**
+   * Display name shown on the profile page.
+   */
+  name?: string | null;
+  updatedAt: string;
+  createdAt: string;
+  deletedAt?: string | null;
+  email: string;
+  resetPasswordToken?: string | null;
+  resetPasswordExpiration?: string | null;
+  salt?: string | null;
+  hash?: string | null;
+  loginAttempts?: number | null;
+  lockUntil?: string | null;
+  sessions?:
+    | {
+        id: string;
+        createdAt?: string | null;
+        expiresAt: string;
+      }[]
+    | null;
+  password?: string | null;
+  collection: 'users';
+}
+/**
+ * Mock-checkout order history. Append-only for customers; admins can manage. Price + currency + category are snapshotted at purchase time.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "purchases".
+ */
+export interface Purchase {
+  id: string;
+  /**
+   * Buyer (Users collection).
+   */
+  user: string | User;
+  /**
+   * Purchased product. ON DELETE RESTRICT — cannot hard-delete a sold product.
+   */
+  product: string | Product;
+  /**
+   * Price (major units) at the moment of purchase. Snapshotted by hook.
+   */
+  priceAtPaid: number;
+  currency: 'usd' | 'cad' | 'eur';
+  /**
+   * Snapshot of the product category at purchase time.
+   */
+  categoryAtPaid?: ('cheatsheet' | 'guide' | 'template' | 'flashcards' | 'bundle') | null;
+  /**
+   * Demo project — every mock checkout lands as 'completed'.
+   */
+  status: 'completed' | 'refunded';
+  purchasedAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * API keys control which collections, resources, tools, and prompts MCP clients can access
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -349,6 +437,14 @@ export interface PayloadLockedDocument {
         value: string | Product;
       } | null)
     | ({
+        relationTo: 'users';
+        value: string | User;
+      } | null)
+    | ({
+        relationTo: 'purchases';
+        value: string | Purchase;
+      } | null)
+    | ({
         relationTo: 'payload-mcp-api-keys';
         value: string | PayloadMcpApiKey;
       } | null);
@@ -361,6 +457,10 @@ export interface PayloadLockedDocument {
     | {
         relationTo: 'mcp-agents';
         value: string | McpAgent;
+      }
+    | {
+        relationTo: 'users';
+        value: string | User;
       }
     | {
         relationTo: 'payload-mcp-api-keys';
@@ -383,6 +483,10 @@ export interface PayloadPreference {
     | {
         relationTo: 'mcp-agents';
         value: string | McpAgent;
+      }
+    | {
+        relationTo: 'users';
+        value: string | User;
       }
     | {
         relationTo: 'payload-mcp-api-keys';
@@ -467,6 +571,45 @@ export interface ProductsSelect<T extends boolean = true> {
   updatedAt?: T;
   createdAt?: T;
   deletedAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "users_select".
+ */
+export interface UsersSelect<T extends boolean = true> {
+  name?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  deletedAt?: T;
+  email?: T;
+  resetPasswordToken?: T;
+  resetPasswordExpiration?: T;
+  salt?: T;
+  hash?: T;
+  loginAttempts?: T;
+  lockUntil?: T;
+  sessions?:
+    | T
+    | {
+        id?: T;
+        createdAt?: T;
+        expiresAt?: T;
+      };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "purchases_select".
+ */
+export interface PurchasesSelect<T extends boolean = true> {
+  user?: T;
+  product?: T;
+  priceAtPaid?: T;
+  currency?: T;
+  categoryAtPaid?: T;
+  status?: T;
+  purchasedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
