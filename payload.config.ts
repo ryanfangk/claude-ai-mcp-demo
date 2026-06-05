@@ -9,6 +9,8 @@ import { mcpPlugin } from '@payloadcms/plugin-mcp'
 import { Admins } from './collections/Admins'
 import { MCPAgents } from './collections/MCPAgents'
 import { Products } from './collections/Products'
+import { Users } from './collections/Users'
+import { Purchases } from './collections/Purchases'
 import { createManyProductsTool, updateManyProductsTool } from './lib/mcp-tools'
 import { mcpOverrideAuth } from './lib/workos'
 
@@ -55,7 +57,7 @@ export default buildConfig({
       titleSuffix: ' — Pop-up Shop',
     },
   },
-  collections: [Admins, MCPAgents, Products],
+  collections: [Admins, MCPAgents, Products, Users, Purchases],
   plugins: [
     // Official Payload MCP server. Content-only surface — only `products` is
     // exposed; admins/mcp-agents are managed by humans in the admin panel.
