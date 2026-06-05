@@ -58,6 +58,15 @@ function formatRelative(iso: string | null | undefined): string {
   return `${day} days ago`
 }
 
+// Filter products to those created within the last DAYS_WINDOW days. Hoisted
+// out of the component body because Next.js 16 lint flags `Date.now()` calls
+// during render as impure (the React purity rule). Inside a top-level helper
+// function the same call is fine.
+function productsInWindow<T extends { createdAt?: unknown }>(rows: T[], days: number): T[] {
+  const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000
+  return rows.filter((r) => typeof r.createdAt === 'string' && new Date(r.createdAt).getTime() >= sinceMs)
+}
+
 // Bucket a series of ISO date strings into a contiguous day-by-day count
 // covering the last DAYS_WINDOW days, oldest-first. Zero-days are kept so
 // the line chart doesn't compress empty stretches into gaps.
@@ -136,10 +145,7 @@ export default async function Dashboard() {
     agents.docs.find((a) => typeof a.lastSeenAt === 'string')?.lastSeenAt ?? null
   const lastSeenAgentName = agents.docs.find((a) => typeof a.lastSeenAt === 'string')?.name ?? null
 
-  const sinceMs = Date.now() - DAYS_WINDOW * 24 * 60 * 60 * 1000
-  const recentWindow = products.filter(
-    (p) => typeof p.createdAt === 'string' && new Date(p.createdAt).getTime() >= sinceMs,
-  )
+  const recentWindow = productsInWindow(products, DAYS_WINDOW)
 
   const perDay = bucketByDay(
     recentWindow
