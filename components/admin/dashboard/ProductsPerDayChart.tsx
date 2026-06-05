@@ -1,25 +1,24 @@
 'use client'
 
-// Recharts area chart: total revenue per day across the last 30 days.
+// Recharts area chart: products created per day across the last 30 days.
 // Client component — Recharts uses refs + ResizeObserver, can't render under
-// React Server Components. Server hands plain { day, revenue } arrays in;
+// React Server Components. Server hands plain { day, count } arrays in;
 // nothing here touches Payload.
 //
-// Same coral-gradient treatment as the previous products-per-day chart so
-// the top-of-page chart stays the visual focal point of the dashboard —
-// just measuring a different metric (the one your boss actually cares about).
+// Sister chart to RevenuePerDayChart — same area-chart treatment but indigo
+// instead of coral, so the two stacked charts on the dashboard read as
+// "primary metric (revenue, coral)" and "secondary metric (activity, indigo)".
 
 import React from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
-type Point = { day: string; revenue: number }
+type Point = { day: string; count: number }
 
 type Props = {
   data: Point[]
-  coral: string
+  indigo: string
   mute: string
   hairline: string
-  currency: string // e.g. 'USD'
 }
 
 function shortDay(iso: string) {
@@ -28,19 +27,15 @@ function shortDay(iso: string) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-function formatMoney(n: number, currency: string) {
-  return `$${n.toFixed(2)} ${currency}`
-}
-
-export default function RevenuePerDayChart({ data, coral, mute, hairline, currency }: Props) {
+export default function ProductsPerDayChart({ data, indigo, mute, hairline }: Props) {
   return (
     <div style={{ width: '100%', height: 220 }}>
       <ResponsiveContainer>
         <AreaChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
           <defs>
-            <linearGradient id="revenueCoralFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={coral} stopOpacity={0.35} />
-              <stop offset="100%" stopColor={coral} stopOpacity={0} />
+            <linearGradient id="productsIndigoFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={indigo} stopOpacity={0.3} />
+              <stop offset="100%" stopColor={indigo} stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid stroke={hairline} strokeDasharray="3 3" vertical={false} />
@@ -57,14 +52,11 @@ export default function RevenuePerDayChart({ data, coral, mute, hairline, curren
             tick={{ fill: mute, fontSize: 12 }}
             tickLine={false}
             axisLine={false}
-            width={48}
-            tickFormatter={(v) => `$${Math.round(Number(v))}`}
+            allowDecimals={false}
+            width={32}
           />
           <Tooltip
             cursor={{ stroke: hairline }}
-            // Custom content so the tooltip doesn't render Recharts'
-            // default "<series-name>: <value>" line — with an empty name
-            // we'd get a stray leading colon like ": 54.98 USD".
             content={({ active, payload, label }) => {
               if (!active || !payload || payload.length === 0) return null
               const value = Number(payload[0]?.value ?? 0)
@@ -83,8 +75,8 @@ export default function RevenuePerDayChart({ data, coral, mute, hairline, curren
                   <div style={{ color: mute, fontSize: '0.75rem' }}>
                     {shortDay(String(label))}
                   </div>
-                  <div style={{ color: coral, fontWeight: 500, marginTop: '0.15rem' }}>
-                    {formatMoney(value, currency)}
+                  <div style={{ color: indigo, fontWeight: 500, marginTop: '0.15rem' }}>
+                    {value} {value === 1 ? 'product' : 'products'}
                   </div>
                 </div>
               )
@@ -92,10 +84,10 @@ export default function RevenuePerDayChart({ data, coral, mute, hairline, curren
           />
           <Area
             type="monotone"
-            dataKey="revenue"
-            stroke={coral}
+            dataKey="count"
+            stroke={indigo}
             strokeWidth={2}
-            fill="url(#revenueCoralFill)"
+            fill="url(#productsIndigoFill)"
             isAnimationActive={false}
           />
         </AreaChart>

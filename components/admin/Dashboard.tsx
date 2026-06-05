@@ -17,6 +17,7 @@ import config from '@payload-config'
 
 import StatTile from './dashboard/StatTile'
 import RevenuePerDayChart from './dashboard/RevenuePerDayChart'
+import ProductsPerDayChart from './dashboard/ProductsPerDayChart'
 import CategoryDonut from './dashboard/CategoryDonut'
 import PriceHistogram from './dashboard/PriceHistogram'
 import RecentPurchasesTable from './dashboard/RecentPurchasesTable'
@@ -56,6 +57,27 @@ function formatRelative(iso: string | null | undefined): string {
   if (hr < 48) return `${hr} hr ago`
   const day = Math.round(hr / 24)
   return `${day} days ago`
+}
+
+// Count rows per day across the last DAYS_WINDOW days, oldest-first. Zero
+// days stay in the series so the area chart doesn't compress empty
+// stretches into gaps. Used by the products-per-day chart.
+function bucketCountByDay(
+  timestamps: string[],
+): Array<{ day: string; count: number }> {
+  const counts = new Map<string, number>()
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+  for (let i = DAYS_WINDOW - 1; i >= 0; i--) {
+    const d = new Date(today)
+    d.setUTCDate(d.getUTCDate() - i)
+    counts.set(d.toISOString().slice(0, 10), 0)
+  }
+  for (const t of timestamps) {
+    const key = t.slice(0, 10)
+    if (counts.has(key)) counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return Array.from(counts.entries()).map(([day, count]) => ({ day, count }))
 }
 
 // Build a contiguous day-by-day revenue series covering the last DAYS_WINDOW
@@ -192,6 +214,12 @@ export default async function Dashboard() {
       purchasedAt: p.purchasedAt as string | undefined,
       priceAtPaid: typeof p.priceAtPaid === 'number' ? p.priceAtPaid : 0,
     })),
+  )
+
+  const productsPerDay = bucketCountByDay(
+    products
+      .map((p) => p.createdAt)
+      .filter((t): t is string => typeof t === 'string'),
   )
 
   const byCategory = bucketByCategory(
@@ -335,6 +363,24 @@ export default async function Dashboard() {
           mute={BRAND.mute}
           hairline={BRAND.hairline}
           currency={revenueCurrency}
+        />
+      </section>
+
+      <section
+        style={{
+          background: BRAND.surface,
+          border: `1px solid ${BRAND.hairline}`,
+          borderRadius: '0.75rem',
+          padding: '1.5rem',
+          marginBottom: '1.5rem',
+        }}
+      >
+        <h2 style={cardTitleStyle()}>Products created — last 30 days</h2>
+        <ProductsPerDayChart
+          data={productsPerDay}
+          indigo={BRAND.indigo}
+          mute={BRAND.mute}
+          hairline={BRAND.hairline}
         />
       </section>
 
