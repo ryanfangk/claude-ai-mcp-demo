@@ -31,14 +31,24 @@ export default buildConfig({
     importMap: {
       baseDir: path.resolve(dirname),
     },
-    // Pop-up Shop brand graphics. The login splash gets the full
-    // wordmark+disc; the nav header gets just the coral disc.
+    // Pop-up Shop brand graphics + custom landing view. The login splash
+    // gets the full wordmark+disc; the nav header gets just the coral
+    // disc. The `views.dashboard` override replaces Payload's stock
+    // "Collections / Globals list" landing with the activity dashboard
+    // (charts + recent products table) — the first thing a manager sees
+    // when they open /admin.
+    //
     // String paths point Payload's importMap generator at the files
     // (run `pnpm generate:importmap` after changing these).
     components: {
       graphics: {
         Logo: '/components/admin/Logo',
         Icon: '/components/admin/Icon',
+      },
+      views: {
+        dashboard: {
+          Component: '/components/admin/Dashboard',
+        },
       },
     },
     meta: {
