@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import { BRAND, FONT, STYLES } from '@/lib/brand'
+import { getAnyAuthSession } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,14 @@ export default async function Home() {
     sort: '-createdAt',
   })
 
+  // Determine whether the "Open admin" CTA should appear. Hidden for
+  // shoppers (users-collection sessions) — clicking it would bounce them
+  // to /admin/unauthorized since Payload's admin only accepts admins.
+  // Visible for anonymous visitors (an admin might be landing here for the
+  // first time) and for actual admins.
+  const session = await getAnyAuthSession()
+  const showAdminCta = !session.user || session.user.collection === 'admins'
+
   const mcpEnabled = process.env.MCP_ENABLED === 'true'
 
   return (
@@ -30,9 +39,15 @@ export default async function Home() {
         </p>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
-          <Link href="/admin" style={STYLES.secondaryButton}>
-            Open admin
-          </Link>
+          {showAdminCta ? (
+            <Link href="/admin" style={STYLES.secondaryButton}>
+              Open admin
+            </Link>
+          ) : (
+            <Link href="/profile" style={STYLES.secondaryButton}>
+              Your profile
+            </Link>
+          )}
           <span
             style={{
               display: 'inline-flex',

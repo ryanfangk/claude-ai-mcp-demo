@@ -59,9 +59,47 @@ export const SESSION_COOKIE_NAME = 'payload-token'
 
 // Clear the session cookie — used by the logout action.
 // Server Action only (cookies() mutation throws outside that context).
+//
+// Use an explicit set('', maxAge: 0) instead of cookies().delete(): the
+// delete shortcut doesn't always emit a Set-Cookie header that matches the
+// attributes the cookie was set with, so the browser keeps the old cookie
+// alive and the next request still authenticates. Mirror every attribute
+// from setSessionCookie() exactly — same path, same flags — so the
+// browser's (name, path, domain) match is identical.
 export async function clearSessionCookie() {
   const jar = await nextCookies()
-  jar.delete(SESSION_COOKIE_NAME)
+  jar.set(SESSION_COOKIE_NAME, '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+    expires: new Date(0),
+  })
+}
+
+// Returns the currently-authenticated principal regardless of collection
+// (admins, users, mcp-agents, payload-mcp-api-keys), or null when anonymous.
+// Used by surfaces that need to react to "any session" — e.g. hiding the
+// "Open admin" CTA for shoppers, who would otherwise click it and be
+// bounced to /admin/unauthorized by Payload.
+//
+// Most call sites should prefer getSessionUser() (storefront-narrowed).
+// Reach for this only when you care that *someone* is logged in.
+export async function getAnyAuthSession(): Promise<{
+  user: { id: string | number; collection: string; email?: string } | null
+}> {
+  const payload = await getPayloadInstance()
+  const h = await nextHeaders()
+  const { user } = await payload.auth({ headers: h as unknown as Headers })
+  if (!user) return { user: null }
+  return {
+    user: {
+      id: user.id as string | number,
+      collection: (user as { collection?: string }).collection ?? 'unknown',
+      email: (user as { email?: string }).email,
+    },
+  }
 }
 
 // Set the session cookie from a Payload login result. Payload's `login()`
